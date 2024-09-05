@@ -1,3 +1,0 @@
-/home/jack/Cuda_Learning/Cuda_practice/CMakeFiles/main.dir
-/home/jack/Cuda_Learning/Cuda_practice/CMakeFiles/edit_cache.dir
-/home/jack/Cuda_Learning/Cuda_practice/CMakeFiles/rebuild_cache.dir
