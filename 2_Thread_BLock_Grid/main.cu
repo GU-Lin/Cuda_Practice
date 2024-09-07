@@ -12,8 +12,8 @@ __global__ void hello_cuda_with_id(){
 
 int main(){
 
-    dim3 grid(2);
-    dim3 block(4);
+    dim3 grid(2);   // Set up the block size in a grid
+    dim3 block(4);  // set up the thread size in a block
     hello_cuda_with_id<<<grid, block>>>();
     cudaDeviceSynchronize();
     cudaDeviceReset();
