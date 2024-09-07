@@ -9,14 +9,14 @@ __global__ void hello_cuda(){
 }
 
 __global__ void print_threadIdx(){
-    printf("threadIDx.x : %d, threadIDx.y : %d, threadIDx.z : %d\n",
-    threadIdx.x, threadIdx.y, threadIdx.z);
+    printf("gridIDx.x : %d, gridIDx.y : %d\n",
+    blockIdx.x, blockIdx.y);
 }
 
 int main(){
-    dim3 block(8,8);
+    dim3 block(4,4,4);
     int nx = 16, ny = 16;
-    dim3 grid(nx/block.x,ny/block.y);
+    dim3 grid(1,2);
     print_threadIdx<<<grid, block>>>();
     cudaDeviceSynchronize();
     cudaDeviceReset();
