@@ -36,19 +36,19 @@ __global__ void print_unique_idx_2D(int *src)
 
 // Block num  : 2, 2
 // Thread num : 2, 2
-// __global__ void print_unique_idx_2D_2D(int *src)
-// {
-//     int tid = threadIdx.x;
-//     int thread_per_block =  blockDim.x*blockDim.y;
-//     int offset_b = thread_per_block*blockIdx.x;
+__global__ void print_unique_idx_2D_2D(int *src)
+{
+    int tid = blockDim.x*threadIdx.y + threadIdx.x;
+    int thread_per_block =  blockDim.x*blockDim.y;
+    int offset_b = thread_per_block*blockIdx.x;
 
-//     int thread_per_row = thread_per_block*gridDim.x;
-//     int offset_r = thread_per_row*blockIdx.y;
+    int thread_per_row = thread_per_block*gridDim.x;
+    int offset_r = thread_per_row*blockIdx.y;
 
-//     int gid = offset_r + offset_b + tid;
-//     printf("BlockIDx.x %d , blockIDx.y %d, threadIDx %d data %d\n", blockIdx.x, blockIdx.y , threadIdx.x,src[gid]);
+    int gid = offset_r + offset_b + tid;
+    printf("BlockIDx.x %d , blockIDx.y %d, threadIDx.x %d threadIDX.y %d data %d\n", blockIdx.x, blockIdx.y , threadIdx.x, threadIdx. y,src[gid]);
 
-// }
+}
 
 
 __global__ void sum_for_three_array_gpu(int* src1, int* src2, int* src3, int* src4)
@@ -95,23 +95,23 @@ void test1()
 
 }
 
-// void test2()
-// {
-//     int size = 16;
-//     int byte_size = sizeof(int) * size;
-//     int host_data[] = {50, 26, 8, 9, 31, 64, 51, 20, -2, -10, 23, 7, 5, 10, 0, 1};
-//     int *device_data;
-//     cudaMalloc((void**)&device_data, byte_size);
-//     cudaMemcpy(device_data, host_data, byte_size, cudaMemcpyHostToDevice);    
-//     dim3 grid_2d_2d(2,2);
-//     dim3 block_2d_2d(2,2);
-//     print_unique_idx_2D_2D<<<grid_2d_2d, block_2d_2d>>>(device_data);
+void test2()
+{
+    int size = 16;
+    int byte_size = sizeof(int) * size;
+    int host_data[] = {50, 26, 8, 9, 31, 64, 51, 20, -2, -10, 23, 7, 5, 10, 0, 1};
+    int *device_data;
+    cudaMalloc((void**)&device_data, byte_size);
+    cudaMemcpy(device_data, host_data, byte_size, cudaMemcpyHostToDevice);    
+    dim3 grid_2d_2d(2,2);
+    dim3 block_2d_2d(2,2);
+    print_unique_idx_2D_2D<<<grid_2d_2d, block_2d_2d>>>(device_data);
 
-//     // free(host_data);
-//     cudaFree(device_data);
-//     cudaDeviceSynchronize();
-//     cudaDeviceReset();
-// }
+    // free(host_data);
+    cudaFree(device_data);
+    cudaDeviceSynchronize();
+    cudaDeviceReset();
+}
 
 void test3()
 {
@@ -202,7 +202,7 @@ void test3()
 
 int main(){
 
-    test1();
+    test2();
     return 0;
 
 }
