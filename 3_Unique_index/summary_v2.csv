@@ -1,0 +1,7 @@
+Gpu done
+Start to check
+Valid check false
+Time of CPU : 0.005432
+Time of GPU : 0.001384
+==PROF== Disconnected from process 14521
+==WARNING== No kernels were profiled.

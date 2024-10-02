@@ -47,7 +47,7 @@ __global__ void print_unique_idx_2D_2D(int *src)
 
     int gid = offset_r + offset_b + tid;
     printf("BlockIDx.x %d , blockIDx.y %d, threadIDx.x %d threadIDX.y %d data %d\n", blockIdx.x, blockIdx.y , threadIdx.x, threadIdx. y,src[gid]);
-
+    
 }
 
 
@@ -164,7 +164,7 @@ void test3()
     sum_for_three_array_cpu(random_numbers1,random_numbers2,random_numbers3,random_numbers4);
     end_host = clock();
     printf("Cpu done\n");
-    int nx = 512;
+    int nx = 1024*8;
     dim3 grid(nx);
     dim3 block(SIZE/nx);
     // Compute by cpu
@@ -192,17 +192,18 @@ void test3()
     cudaFree(random_numbersGPU2);
     cudaFree(random_numbersGPU3);
     cudaFree(random_numbersGPU4);
+    cudaDeviceReset();
     free(random_numbers1);
     free(random_numbers2);
     free(random_numbers3);
     free(random_numbers4);
     free(result_from_device);
-    cudaDeviceReset();
+    
 }
 
 int main(){
 
-    test2();
+    test3();
     return 0;
 
 }
