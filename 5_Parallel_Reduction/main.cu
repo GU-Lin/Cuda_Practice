@@ -149,17 +149,17 @@ __global__ void reduce5(int *g_idata, int *g_odata)
     sdata[tid] = g_idata[i] + g_idata[i+blockDim.x];
     __syncthreads();
 
-    if(blockDim.x==512 && tid<256)
-    {
-        sdata[tid] += sdata[tid+256];
-    }
-    __syncthreads();
-    if(blockDim.x==256 && tid<128)
-    {
-        sdata[tid] += sdata[tid+128];
-    }
-    __syncthreads();
-    if(blockDim.x==128 && tid<64)
+    // if(blockDim.x>=512 && tid<256)
+    // {
+    //     sdata[tid] += sdata[tid+256];
+    // }
+    // __syncthreads();
+    // if(blockDim.x>=256 && tid<128)
+    // {
+    //     sdata[tid] += sdata[tid+128];
+    // }
+    // __syncthreads();
+    if(blockDim.x>=128 && tid<64)
     {
         sdata[tid] += sdata[tid+64];
     }
@@ -171,7 +171,6 @@ __global__ void reduce5(int *g_idata, int *g_odata)
     } 
     if (tid == 0) g_odata[blockIdx.x] = sdata[0];
 }
-
 
 void test()
 {
@@ -194,20 +193,18 @@ void test()
         // printf("%d\n",vector_h[i]);
     }
     // Set up grid, block for kernel
-    int block_size = 256;
+    int block_size = 128;
     dim3 block(block_size);
     dim3 grid((SIZE/block_size));
     int temp_array_byte_size = sizeof(int)* grid.x;
     printf("Kernel launch parameters | grid.x : %d, block.x : %d \n",
     grid.x, block.x);
-
-
     // Host to device
 
     cudaMemcpy(vector_d,vector_h, size_vector, cudaMemcpyHostToDevice);
     // Execute 
     auto start = std::chrono::high_resolution_clock::now();
-    reduce2<<<grid, block>>>(vector_d,vector_temp);
+    reduce1<<<grid, block>>>(vector_d,vector_temp);
     cudaDeviceSynchronize();
     auto end = std::chrono::high_resolution_clock::now();
     // Device to host
@@ -235,18 +232,31 @@ void test()
     std::chrono::duration<double, std::milli> elapsed_cpu = end_cpu - start_cpu;
     std::cout << "Cpu time: " << elapsed_cpu.count() << " ms\n";
     std::cout << "Gpu time: " << elapsed.count() << " ms\n";
+    float data_size_gb = 2.0f * size_vector / (1024 * 1024 * 1024);
+    float bandwidth = data_size_gb / (elapsed.count() / 1000.0f);
+    std::cout << "Memory Bandwidth: " << bandwidth << " GB/s\n";
     // printf("Gpu tim %f ms\n",milliseconds);
     error = cudaFree(vector_d);
     error = cudaFree(vector_temp);
     free(vector_h);
 }
 
+void print_memory_information()
+{
+    cudaDeviceProp prop;
+    cudaGetDeviceProperties(&prop, 0);
+    std::cout << "Memory Clock Rate (MHz): " << prop.memoryClockRate / 1000 << " MHz" << std::endl;
+    std::cout << "Memory Bus Width (bits): " << prop.memoryBusWidth << " bits" << std::endl;
+}
+
 int main()
 {
     
-    for(int i = 0; i < 10; i++)
+    for(int i = 0; i < 20; i++)
     {
         test();
     }
+
+    
     return 0;
 }
