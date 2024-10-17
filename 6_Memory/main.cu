@@ -6,12 +6,10 @@
 #include <random>
 #include <chrono>
 
-#define SHARED_SIZE 16
-#define M 1024
-#define N 1024
-#define BLOCKSIZE_X 16
-#define BLOCKSIZE_Y 16
-#define IPAD 2
+#define SHARED_SIZE 32
+#define WIDTH 4096
+#define HEIGHT 4096
+
 
 int cpu_sum(int *vector_h,int size)
 {
@@ -77,7 +75,7 @@ void shared_sample()
    
 
     dim3 block(SHARED_SIZE,SHARED_SIZE);
-    dim3 grid(N/SHARED_SIZE, M/SHARED_SIZE);
+    dim3 grid(WIDTH/SHARED_SIZE, HEIGHT/SHARED_SIZE);
 
     test_shared_static<<<grid, block>>>(d_input, d_output, size);
     cudaMemset(d_output, 0, byte_size);
@@ -88,124 +86,139 @@ void shared_sample()
     free(h_ref);
 }
 
-__global__ void transepose_gpu_SHEM(int* input, int* output)
-{
-    __shared__ int shared_mem[BLOCKSIZE_Y][BLOCKSIZE_X+1];
-    const unsigned  int x = blockIdx.x * blockDim.x + threadIdx.x;
-	const unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
-	
-	// find shmem[row][col] mapped to current thread
-	const unsigned int tid = blockDim.x * threadIdx.y + threadIdx.x;
-	const unsigned int col = tid / blockDim.y;
-	const unsigned int row = tid % blockDim.y;
 
-	// find the global index of (sx, sy) mapped to the local shmem[row][col]
-	const unsigned int sx = blockIdx.x * blockDim.x + col;
-	const unsigned int sy = blockIdx.y * blockDim.y + row;
+__global__ void transpose_Naive(int* input, int* output, int width, int height) {
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
 
-	// then copy shmem[row][col] to out matrix (sy, sx)
-    if(x < N && y < M)
-    {
-        shared_mem[threadIdx.y][threadIdx.x] = input[y * N + x];
+    // Check boundary
+    if (x < width && y < height) {
+        output[x * height + y] = input[y * width + x];
     }
-    __syncthreads();
-    output[sx*M + sy] = shared_mem[row][col];
-
 }
 
-__global__ void transpose_gpu_SHEM_1(int* input, int* output, int width, int height) {
-    __shared__ int shared_mem[SHARED_SIZE][SHARED_SIZE + 2]; // 避免 bank conflict，添加一個偏移量
+__global__ void transpose_SHEM(int* input, int* output, int width, int height) {
+    __shared__ int shared_mem[SHARED_SIZE][SHARED_SIZE];
+
     int x = blockIdx.x * SHARED_SIZE + threadIdx.x;
     int y = blockIdx.y * SHARED_SIZE + threadIdx.y;
 
-    // 把資料從 global memory 複製到 shared memory
+    // Copy data from global memory to shared memory
     if (x < width && y < height) {
         shared_mem[threadIdx.y][threadIdx.x] = input[y * width + x];
     }
     __syncthreads();
 
-    // 轉置座標
+    // global index
     int transposed_x = blockIdx.y * SHARED_SIZE + threadIdx.x;
     int transposed_y = blockIdx.x * SHARED_SIZE + threadIdx.y;
 
-    // 把轉置後的資料寫回 global memory
+    // Copy data to global memory
     if (transposed_x < height && transposed_y < width) {
         output[transposed_y * height + transposed_x] = shared_mem[threadIdx.x][threadIdx.y];
     }
 }
 
-int test()
+__global__ void transpose_SHEM_padding(int* input, int* output, int width, int height) {
+    __shared__ int shared_mem[SHARED_SIZE][SHARED_SIZE + 1]; // Avoid bank conflict
+
+    int x = blockIdx.x * SHARED_SIZE + threadIdx.x;
+    int y = blockIdx.y * SHARED_SIZE + threadIdx.y;
+
+    // Copy data from global memory to shared memory
+    if (x < width && y < height) {
+        shared_mem[threadIdx.y][threadIdx.x] = input[y * width + x];
+    }
+    __syncthreads();
+
+    // global index
+    int transposed_x = blockIdx.y * SHARED_SIZE + threadIdx.x;
+    int transposed_y = blockIdx.x * SHARED_SIZE + threadIdx.y;
+
+    // Copy data to global memory
+    if (transposed_x < height && transposed_y < width) {
+        output[transposed_y * height + transposed_x] = shared_mem[threadIdx.x][threadIdx.y];
+    }
+}
+
+
+double test()
 {
-    // 主機端矩陣
-    int h_in_matrix[M][N], h_out_matrix[N][M];
+    int* h_in_matrix = new int[WIDTH * HEIGHT];
+    int* h_out_matrix = new int[WIDTH * HEIGHT];
     int *d_input_matrix, *d_output_matrix;
 
-    // 初始化輸入矩陣
-    for (int i = 0; i < M; i++) {
-        for (int j = 0; j < N; j++) {
-            h_in_matrix[i][j] = rand() % 10;
+    // Initial
+    for (int i = 0; i < HEIGHT; i++) {
+        for (int j = 0; j < WIDTH; j++) {
+            h_in_matrix[i * WIDTH + j] = rand() % 10;
         }
     }
 
-    // 分配設備記憶體，並檢查錯誤
-    if (cudaMalloc(&d_input_matrix, M * N * sizeof(int)) != cudaSuccess) {
-        std::cerr << "Error allocating device memory for input matrix." << std::endl;
+    // cudaMalloc and check
+    cudaError_t err = cudaMalloc(&d_input_matrix, WIDTH * HEIGHT * sizeof(int));
+    if (err != cudaSuccess) {
+        std::cerr << "Error allocating device memory for input matrix: " 
+                  << cudaGetErrorString(err) << std::endl;
         return -1;
     }
-    if (cudaMalloc(&d_output_matrix, N * M * sizeof(int)) != cudaSuccess) {
-        std::cerr << "Error allocating device memory for output matrix." << std::endl;
+
+    err = cudaMalloc(&d_output_matrix, WIDTH * HEIGHT * sizeof(int));
+    if (err != cudaSuccess) {
+        std::cerr << "Error allocating device memory for output matrix: " 
+                  << cudaGetErrorString(err) << std::endl;
         cudaFree(d_input_matrix);
         return -1;
     }
 
-    // 拷貝主機矩陣到設備記憶體，並檢查錯誤
-    if (cudaMemcpy(d_input_matrix, h_in_matrix, M * N * sizeof(int), cudaMemcpyHostToDevice) != cudaSuccess) {
-        std::cerr << "Error copying input matrix to device." << std::endl;
-        cudaFree(d_input_matrix);
-        cudaFree(d_output_matrix);
-        return -1;
-    }
-
-    // 配置 grid 和 block 大小
-    dim3 block(BLOCKSIZE_X, BLOCKSIZE_Y);
-    dim3 grid((N + block.x - 1) / block.x, (M + block.y - 1) / block.y);
-
-    // 調用 CUDA kernel，並檢查錯誤
-    transpose_gpu_SHEM_1<<<grid, block>>>(d_input_matrix, d_output_matrix, N, M);
-    if (cudaPeekAtLastError() != cudaSuccess) {
-        std::cerr << "Error launching the kernel." << std::endl;
+    // Copy data from host to device
+    err = cudaMemcpy(d_input_matrix, h_in_matrix, WIDTH * HEIGHT * sizeof(int), cudaMemcpyHostToDevice);
+    if (err != cudaSuccess) {
+        std::cerr << "Error copying input matrix to device: " 
+                  << cudaGetErrorString(err) << std::endl;
         cudaFree(d_input_matrix);
         cudaFree(d_output_matrix);
         return -1;
     }
 
-    // 等待設備完成，並檢查錯誤
-    if (cudaDeviceSynchronize() != cudaSuccess) {
-        std::cerr << "Error synchronizing device." << std::endl;
+    // Allocate block and grid
+    dim3 block(SHARED_SIZE, SHARED_SIZE);
+    dim3 grid((WIDTH + SHARED_SIZE - 1) / SHARED_SIZE, (HEIGHT + SHARED_SIZE - 1) / SHARED_SIZE);
+
+    // Launch kernel
+    auto start = std::chrono::high_resolution_clock::now();
+    transpose_SHEM_padding<<<grid, block>>>(d_input_matrix, d_output_matrix, WIDTH, HEIGHT);
+    err = cudaDeviceSynchronize();
+    auto end = std::chrono::high_resolution_clock::now();
+    if (err != cudaSuccess) {
+        std::cerr << "Error synchronizing device: " 
+                  << cudaGetErrorString(err) << std::endl;
         cudaFree(d_input_matrix);
         cudaFree(d_output_matrix);
         return -1;
     }
 
-    // 拷貝結果回主機，並檢查錯誤
-    if (cudaMemcpy(h_out_matrix, d_output_matrix, N * M * sizeof(int), cudaMemcpyDeviceToHost) != cudaSuccess) {
-        std::cerr << "Error copying output matrix to host." << std::endl;
+    // Copy data from device to host
+    err = cudaMemcpy(h_out_matrix, d_output_matrix, WIDTH * HEIGHT * sizeof(int), cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess) {
+        std::cerr << "Error copying output matrix to host: " 
+                  << cudaGetErrorString(err) << std::endl;
         cudaFree(d_input_matrix);
         cudaFree(d_output_matrix);
         return -1;
     }
 
-    // // 驗證結果
-    // bool correct = true;
-    // for (int i = 0; i < M; i++) {
-    //     for (int j = 0; j < N; j++) {
-    //         if (h_out_matrix[j][i] != h_in_matrix[i][j]) {
-    //             correct = false;
-    //             break;
-    //         }
-    //     }
-    //     if (!correct) break;
-    // }
+    // Validation
+    bool correct = true;
+    for (int i = 0; i < HEIGHT; i++) {
+        for (int j = 0; j < WIDTH; j++) {
+            if (h_out_matrix[j * HEIGHT + i] != h_in_matrix[i * WIDTH + j]) {
+                correct = false;
+                break;
+            }
+        }
+        if (!correct) break;
+    }
 
     // if (correct) {
     //     std::cout << "矩陣轉置正確!" << std::endl;
@@ -216,13 +229,30 @@ int test()
     // 釋放設備記憶體
     cudaFree(d_input_matrix);
     cudaFree(d_output_matrix);
-    return 0;
+
+    // 釋放主機記憶體
+    delete[] h_in_matrix;
+    delete[] h_out_matrix;
+    std::chrono::duration<double, std::milli> elapsed = end - start;
+    return elapsed.count();
 }
 
 int main()
 {
-
-    test();
+    int num = 10;
+    double average_time = 0.0;
+    for(int i = 0; i < num; i++)
+    {
+        double temp = test();
+        if(i==0)continue;
+        average_time += (temp/(num-1));
+        std::cout << "Time: " << (temp/(num-1))/1000 << " s\n";
+    }
+    std::cout << "-------------------" << std::endl;
+    int data_size = WIDTH * HEIGHT * sizeof(int);
+    float bandwidth = 2*data_size / (average_time/1000*1024*1024*1024);
+    std::cout << "Time: " << average_time/1000 << " s\n";
+    std::cout << "Memory Bandwidth: " << bandwidth << " GB/s\n";
     
     return 0;
 }
