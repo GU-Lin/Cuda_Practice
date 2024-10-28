@@ -7,7 +7,7 @@ link_directories(${Eigen_INCLUDE_DIRS})
 
 add_executable(main)
 
-target_sources(main PRIVATE "main.cu")
+target_sources(main PRIVATE "main.cu" "myOperation.cpp")
 
 target_compile_options(main PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-Xptxas=-v>)
 target_link_libraries(main Eigen3::Eigen)
