@@ -36,14 +36,14 @@ void transferVectorToCUDA(const Eigen::Matrix<T, Eigen::Dynamic, 1>& hostMatrix,
     }
 
     // 拷貝數據到設備
-    if(flag)
-    {
-        status = cudaMemcpy(deviceMatrix, hostMatrix.data(), size * sizeof(T), cudaMemcpyHostToDevice);
-        if (status != cudaSuccess) {
-            cudaFree(deviceMatrix); // 釋放已分配的設備內存
-            throw std::runtime_error("CUDA memcpy failed: " + std::string(cudaGetErrorString(status)));
-        }
+    // if(flag)
+    // {
+    status = cudaMemcpy(deviceMatrix, hostMatrix.data(), size * sizeof(T), cudaMemcpyHostToDevice);
+    if (status != cudaSuccess) {
+        cudaFree(deviceMatrix); // 釋放已分配的設備內存
+        throw std::runtime_error("CUDA memcpy failed: " + std::string(cudaGetErrorString(status)));
     }
+    // }
 }
 template void transferVectorToCUDA<double>(const Eigen::Matrix<double, Eigen::Dynamic, 1>&, double*&, std::size_t, bool);
 template void transferVectorToCUDA<float>(const Eigen::Matrix<float, Eigen::Dynamic, 1>&, float*&, std::size_t, bool);
