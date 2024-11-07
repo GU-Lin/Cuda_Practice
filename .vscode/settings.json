@@ -69,6 +69,9 @@
         "__tree": "cpp",
         "map": "cpp",
         "set": "cpp",
-        "complex": "cpp"
+        "complex": "cpp",
+        "__locale": "cpp",
+        "ios": "cpp",
+        "__bit_reference": "cpp"
     }
 }

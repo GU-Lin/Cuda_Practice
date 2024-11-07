@@ -1,4 +1,5 @@
 #include "myOperation.hpp"
+#include <chrono>
 int num = 128;
 
 __global__ void matrixKernel(double* d_matrix, int rows, int cols) {
@@ -8,110 +9,6 @@ __global__ void matrixKernel(double* d_matrix, int rows, int cols) {
         printf("Value %d is %f\n", idx ,d_matrix[idx]);
     }
 }
-
-__global__ void matrixMultiVector(double* d_matrix, double* d_vector_in,double* d_vector_out, int rows, int cols) {
-    int idx = threadIdx.x + blockIdx.x * blockDim.x;
-    if (idx < cols) {
-        
-        double sum = 0.0;
-        for(int j = 0; j < cols; j++)
-        {
-            sum += d_matrix[idx*cols + j]*d_vector_in[j];
-        }
-        d_vector_out[idx] = sum;
-        
-    }
-    __syncthreads();
-}
-
-__global__ void vectorMultiScale(double* d_vector, double s,int rows) {
-    int idx = threadIdx.x + blockIdx.x * blockDim.x;
-    if (idx < rows ) {
-        // 這裡可以對矩陣進行操作，例如 d_matrix[idx] = d_matrix[idx] * 2.0;
-        d_vector[idx] *= s;
-    }
-    __syncthreads();
-}
-
-__global__ void vectorAdd(double* d_vector1, double* d_vector2, double* scale, double* d_out, int rows) {
-    int idx = threadIdx.x + blockIdx.x * blockDim.x;
-    if (idx < rows ) {
-        // 這裡可以對矩陣進行操作，例如 d_matrix[idx] = d_matrix[idx] * 2.0;
-        d_out[idx] = d_vector1[idx] + (*scale)*d_vector2[idx];
-    }
-    __syncthreads();
-}
-
-__global__ void vectorMinus(double* d_vector1, double* d_vector2, double* scale, double* d_out, int rows) {
-    int idx = threadIdx.x + blockIdx.x * blockDim.x;
-    if (idx < rows ) {
-        // 這裡可以對矩陣進行操作，例如 d_matrix[idx] = d_matrix[idx] * 2.0;
-        d_out[idx] = d_vector1[idx] - (*scale)*d_vector2[idx];
-        // printf("Num %d with %f is: %f - %f = %f\n",idx,*scale,d_vector1[idx],d_vector2[idx],d_out[idx]);
-    }
-    __syncthreads();
-}
-
-__global__ void vectorDotElementWise(double* d_vector1, double* d_vector2, double* d_vector3, int rows) {
-    int idx = threadIdx.x + blockIdx.x * blockDim.x;
-    if (idx < rows ) {
-        // 這裡可以對矩陣進行操作，例如 d_matrix[idx] = d_matrix[idx] * 2.0;
-        d_vector3[idx] = d_vector2[idx] * d_vector1[idx];
-        // printf("%d %f\n", idx, d_vector3[idx]);
-    }
-    __syncthreads();
-}
-
-__device__ void warpReduce(volatile double* sdata, int tid) 
-{
-    sdata[tid] += sdata[tid + 32];
-    sdata[tid] += sdata[tid + 16];
-    sdata[tid] += sdata[tid + 8];
-    sdata[tid] += sdata[tid + 4];
-    sdata[tid] += sdata[tid + 2];
-    sdata[tid] += sdata[tid + 1];
-}
-
-__global__ void vectorDotValue(double* d_vector_in, double* d_vector_out, int rows)
-{
-    extern __shared__ double sdata[];
-    // each thread loads one element from global to shared mem
-    unsigned int tid = threadIdx.x;
-    unsigned int i = blockIdx.x*blockDim.x + threadIdx.x;
-    if (i < rows) {
-        sdata[tid] = d_vector_in[i];
-    } else {
-        sdata[tid] = 0.0;  // 若超出范围，赋值为0
-    }
-    // printf("blockDim.x is %d\n",blockDim.x);
-    __syncthreads();
-    // // do reduction in shared mem
-    for (unsigned int s=blockDim.x/2; s>0; s>>=1) {
-        if (tid < s) 
-        {
-            sdata[tid] += sdata[tid + s];
-        }
-        __syncthreads();
-    }
-
-    // write result for this block to global mem
-    if (tid == 0)
-    {
-        d_vector_out[blockIdx.x] = sdata[0];
-        
-    } 
-}
-
-__global__ void scaleDivision(double* up, double* low, double* out)
-{
-    *out = (*up) / (*low);
-}
-
-__global__ void initializeToOne(double *d_ptr) {
-    *d_ptr = 1.0;
-}
-
-
 
 void test()
 {
@@ -163,7 +60,8 @@ void CGMethodCPU(const MatrixType &h_A, const VectorType &h_b, VectorType &h_xou
     double up = 0.0;
     int i = 0;
     Eigen::VectorXd Ap ;
-    while(true && i < num*2)
+    auto start = std::chrono::high_resolution_clock::now();
+    while(true)
     {
         double low = h_rk.dot(h_rk);
         Ap = h_A*h_pk;
@@ -171,22 +69,155 @@ void CGMethodCPU(const MatrixType &h_A, const VectorType &h_b, VectorType &h_xou
         h_xk = h_xk + ak*h_pk;
         h_rk = h_rk - ak*Ap;
         up = h_rk.dot(h_rk);
+        // std::cout << sqrt(up) << std::endl;
         if(sqrt(up) < 1e-6) break;
         double bk = up/low;
         h_pk = h_rk + bk*h_pk;
         i++;   
-        break;
+        // break;
     }
-    h_xout = h_x;
+    // h_xout = h_x;
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> elapsed = end - start;
+    std::cout << "Cpu time: " << elapsed.count() << " ms\n";
     std::cout << "Res is " << sqrt(up) << std::endl;
     std::cout << "Num is " << i << std::endl;
 }
 
+void sumCPU(double* v, int v_num, double *res)
+{
+    for(int i = 0; i < v_num; i++)
+    {
+        *res += v[i];
+    }
+}
 
-// 主程式
-int main() {
+template<typename MatrixType, typename VectorType>
+void CGMethodGPU(const MatrixType &h_A, const VectorType &h_b, VectorType &h_xout)
+{
+    int rows = num;
+    int cols = num;
+    Eigen::VectorXd h_one(num);
+    // Cuda Malloc
+    double *d_A, *d_b, *d_x, *d_p;
+    double *d_r, *d_Ap, *d_temp, *d_reduce;
+    double *d_low, *d_up, *d_ak, *d_bk, *d_value;
+    d_A = nullptr;
+    d_b = nullptr;  // 初始化設備指標
+    d_x = nullptr;
+
+    // Set up grid, block
+    int block_num = 64;
+    int grid_num = (num+block_num-1)/block_num;
+    int grid_para_num = (num+1)/(block_num*2);
+    std::cout << "Grid_para_num is " << grid_para_num << std::endl;
+    dim3 block(block_num);
+    dim3 grid(grid_num);
+    dim3 grid_para(grid_para_num);
+    transferMatrixToCUDA(h_A, d_A, h_A.rows(), h_A.cols());
+    transferVectorToCUDA(h_b, d_b, h_b.rows(),true); // 傳送 b，因為它是列向量，所以 cols = 1 
+    transferVectorToCUDA(h_one,d_temp,h_one.rows(),true);
+    cudaMalloc(&d_x, rows * sizeof(double));
+    cudaMalloc(&d_Ap, rows * sizeof(double));
+    cudaMalloc(&d_temp, rows * sizeof(double));
+    cudaMalloc(&d_reduce, grid_para_num * sizeof(double));
+    cudaMalloc(&d_p, rows * sizeof(double));
+    cudaMalloc(&d_r, rows * sizeof(double));
+    cudaMalloc(&d_low, 1 * sizeof(double));
+    cudaMalloc(&d_up, 1 * sizeof(double));
+    cudaMalloc(&d_ak, 1 * sizeof(double));
+    cudaMalloc(&d_bk, 1 * sizeof(double));
+    cudaMalloc(&d_value, 1*sizeof(double));
+
+    double *h_reduce = new double[grid_para.x];
+    double *h_res_temp = new double[rows];
+    double h_value = 1.0;
+    cudaMemcpy(d_value, &h_value, sizeof(double), cudaMemcpyHostToDevice);
+    int step = 0;
+    //Initial h_rx, h_xk, h_pk
+    // Initial d_x
+    transferVectorToCUDA(h_xout, d_x, h_xout.rows(),true);
+    // Initial d_r
+    matrixMultiVector<<<grid, block>>>(d_A, d_x, d_temp, rows, cols);
+    vectorMinus<<<grid,block>>>(d_b, d_temp, d_value, d_r, rows);
+    // Initial d_p
+    cudaMemcpy(d_p, d_r, rows*sizeof(double), cudaMemcpyDeviceToDevice);
+
+    // Start Conjugate Gradient
+    auto start = std::chrono::high_resolution_clock::now();
+    while(true)
+    {
+        // double low = h_rk.dot(h_rk);
+        double h_low = 0.0;
+        double h_value = 0.0;
+        double h_up = 0.0;
+        vectorDotElementWise<<<grid, block>>>(d_r,d_r,d_temp, rows);
+        vectorDotValuePara<<<grid_para, block>>>(d_temp, d_reduce, rows);
+        cudaMemcpy(h_reduce, d_reduce, grid_para.x*sizeof(double),cudaMemcpyDeviceToHost);
+        sumCPU(h_reduce,grid_para.x, &h_low);
+
+        // Ap = h_A*h_pk;
+        matrixMultiVector<<<grid, block>>>(d_A, d_p, d_Ap, rows, cols);
+
+        // double ak = low/(h_pk.dot(Ap));
+        vectorDotElementWise<<<grid, block>>>(d_p, d_Ap, d_temp, rows);
+        vectorDotValuePara<<<grid_para, block>>>(d_temp, d_reduce, rows);
+        cudaMemcpy(h_reduce, d_reduce, grid_para.x*sizeof(double),cudaMemcpyDeviceToHost);
+        sumCPU(h_reduce,grid_para.x, &h_value);
+
+        // h_ak = h_low/h_value;
+        double h_ak = h_low/h_value;
+        cudaMemcpy(d_ak, &h_ak, sizeof(double), cudaMemcpyHostToDevice);
+
+        // h_xk = h_xk + ak*h_pk;
+        vectorAdd<<<grid, block>>>(d_x, d_p, d_ak, d_x, rows);
+
+        // h_rk = h_rk - ak*Ap;
+        vectorMinus<<<grid, block>>>(d_r, d_Ap, d_ak, d_r, rows);
+
+        // up = h_rk.dot(h_rk);
+        vectorDotElementWise<<<grid, block>>>(d_r, d_r, d_temp, rows);
+        vectorDotValuePara<<<grid_para, block>>>(d_temp, d_reduce, rows);
+        cudaMemcpy(h_reduce, d_reduce, grid_para.x*sizeof(double),cudaMemcpyDeviceToHost);
+        sumCPU(h_reduce,grid_para.x, &h_up);
+
+        if(sqrt(h_up) < 1e-6)
+        {
+            std::cout << "Res is " << sqrt(h_up) << std::endl;
+            break;
+        }
+        // double bk = up/low;
+        double h_bk = h_up/h_low;
+        cudaMemcpy(d_bk, &h_bk, sizeof(double), cudaMemcpyHostToDevice);
+
+        // h_pk = h_rk + bk*h_pk;
+        vectorAdd<<<grid, block>>>(d_r,d_p,d_bk,d_p,rows);
+        step++;   
+        // break;
+    }
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> elapsed = end - start;
+    std::cout << "Gpu time: " << elapsed.count() << " ms\n";
     
-        
+    // 清理
+    cudaFree(d_A);
+    cudaFree(d_b);
+    cudaFree(d_x);
+    cudaFree(d_p);
+    cudaFree(d_r);
+    cudaFree(d_Ap);
+    cudaFree(d_temp);
+    cudaFree(d_reduce);
+    cudaFree(d_up);
+    cudaFree(d_low);
+    cudaFree(d_ak);
+    cudaFree(d_bk);
+    cudaFree(d_value);
+}
+
+
+void test_CG()
+{
     int rows = num;
     int cols = num;
 
@@ -197,104 +228,16 @@ int main() {
     // Construct 100x1 vector b by Eigen
     Eigen::VectorXd h_b = Eigen::VectorXd::Random(rows);
     Eigen::VectorXd h_x = h_b;
-    Eigen::VectorXd h_one(num);
-    double *h_res = new double(1.0);
+    // Eigen::VectorXd h_one(num);
     // 在這裡調用您的 CGMethodCPU 函數（確保其正確實現）
-    // CGMethodCPU(h_A, h_b, h_x);
+    CGMethodCPU(h_A, h_b, h_x);
+    CGMethodGPU(h_A, h_b, h_x);
+}
 
-    // Cuda Malloc
-    double *d_A, *d_b, *d_x, *d_p;
-    double *d_r, *d_Ap, *d_temp, *d_up;
-    double *d_low, *d_ak, *d_bk, *d_value;
-    d_A = nullptr;
-    d_b = nullptr;  // 初始化設備指標
-    d_x = nullptr;
 
-    transferMatrixToCUDA(h_A, d_A, h_A.rows(), h_A.cols());
-    transferVectorToCUDA(h_b, d_b, h_b.rows(),true); // 傳送 b，因為它是列向量，所以 cols = 1
+// 主程式
+int main() {
     
-    transferVectorToCUDA(h_one,d_temp,h_one.rows(),true);
-    cudaMalloc(&d_x, rows * sizeof(double));
-    cudaMalloc(&d_Ap, rows * sizeof(double));
-    cudaMalloc(&d_temp, rows * sizeof(double));
-    cudaMalloc(&d_p, rows * sizeof(double));
-    cudaMalloc(&d_r, rows * sizeof(double));
-    cudaMalloc(&d_low, 1 * sizeof(double));
-    cudaMalloc(&d_up, 1 * sizeof(double));
-    cudaMalloc(&d_ak, 1 * sizeof(double));
-    cudaMalloc(&d_bk, 1 * sizeof(double));
-    cudaMalloc(&d_value, 1*sizeof(double));
-    // Set up grid, block
-    int block_num = num;
-    dim3 block(block_num);
-    dim3 grid((num+block_num-1)/block_num);
-    // dim3 grid(1);
-    dim3 grid_para((num+block_num-1)/(block_num*2));
-    matrixMultiVector<<<grid, block>>>(d_A,d_b,d_x,rows,cols);
-    double *h_x_res = new double[rows];
-    double *h_x_res1 = new double[rows];
-    double h_value = 1.0;
-    cudaMemcpy(d_value, &h_value, sizeof(double), cudaMemcpyHostToDevice);
-    int i = 0;
-    //Initial h_rx, h_xk, h_pk
-    // Initial d_x
-    transferVectorToCUDA(h_x, d_x, h_x.rows(),true);
-    // Initial d_r
-    matrixMultiVector<<<grid, block>>>(d_A, d_x, d_temp, rows, cols);
-    vectorMinus<<<grid,block>>>(d_b, d_temp, d_value, d_r, rows);
-    // Initial d_p
-    cudaMemcpy(d_p, d_r, rows*sizeof(double), cudaMemcpyDeviceToDevice);
-
-    // Start Conjugate Gradient
-    while(1)
-    {
-        // double low = h_rk.dot(h_rk);
-        double h_low = 0.0;
-        double h_value = 0.0;
-        vectorDotElementWise<<<grid, block>>>(d_r,d_r,d_temp, rows);
-        vectorDotValue<<<grid, block>>>(d_temp, d_temp, rows);
-        cudaMemcpy(&h_low, d_temp, sizeof(double),cudaMemcpyDeviceToHost);
-        // Ap = h_A*h_pk;
-        matrixMultiVector<<<grid, block>>>(d_A, d_p, d_Ap, rows, cols);
-        // double ak = low/(h_pk.dot(Ap));
-        vectorDotElementWise<<<grid, block>>>(d_p, d_Ap, d_temp, rows);
-        vectorDotValue<<<grid, block>>>(d_temp, d_temp, rows);
-        cudaMemcpy(&h_value, d_temp, sizeof(double), cudaMemcpyDeviceToHost);
-        std::cout << "Value are "<<h_low << ", " << h_value << std::endl;
-        double h_ak = h_low/h_value;
-        cudaMemcpy(d_ak, &h_ak, sizeof(double), cudaMemcpyHostToDevice);
-        // h_xk = h_xk + ak*h_pk;
-        vectorAdd<<<grid, block>>>(d_x, d_p, d_ak, d_x, rows);
-        // h_rk = h_rk - ak*Ap;
-        vectorMinus<<<grid, block>>>(d_r, d_Ap, d_ak, d_r, rows);
-        // up = h_rk.dot(h_rk);
-        vectorDotElementWise<<<grid, block>>>(d_r, d_r, d_temp, rows);
-        vectorDotValue<<<grid, block>>>(d_temp, d_temp, rows);
-        double h_up = 0.0;
-        cudaMemcpy(&h_up, d_temp, sizeof(double), cudaMemcpyDeviceToHost);
-        std::cout << "Res is " << sqrt(h_up) << std::endl;
-        if(sqrt(h_up) < 1e-6) break;
-        // double bk = up/low;
-        double h_bk = h_up/h_low;
-        cudaMemcpy(d_bk, &h_bk, sizeof(double), cudaMemcpyHostToDevice);
-        // h_pk = h_rk + bk*h_pk;
-        vectorAdd<<<grid, block>>>(d_r,d_p,d_bk,d_p,rows);
-        // i++;   
-        
-        // break;
-    }
-
-    // 清理
-    cudaFree(d_A);
-    cudaFree(d_b);
-    cudaFree(d_x);
-    cudaFree(d_p);
-    cudaFree(d_Ap);
-    cudaFree(d_temp);
-    cudaFree(d_up);
-    cudaFree(d_low);
-    cudaFree(d_ak);
-    cudaFree(d_bk);
-    cudaFree(d_value);
+    test_CG();
     return 0;
 }

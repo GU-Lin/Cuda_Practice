@@ -13,25 +13,19 @@ void transferMatrixToCUDA(const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>
 template<typename T>
 void transferVectorToCUDA(const Eigen::Matrix<T, Eigen::Dynamic, 1>& hostMatrix, T*& deviceMatrix, std::size_t rows, bool flag);
  
+__global__ void matrixMultiVector(double* d_matrix, double* d_vector_in,double* d_vector_out, int rows, int cols);
+ 
+__global__ void vectorMultiScale(double* d_vector, double s,int rows);
 
-// template<typename data_type>
-// void allocateToCUDA(data_type *&deviceMatrix, int rows, int cols, bool flag);
+__global__ void vectorAdd(double* d_vector1, double* d_vector2, double* scale, double* d_out, int rows);
 
+__global__ void vectorMinus(double* d_vector1, double* d_vector2, double* scale, double* d_out, int rows);
+ 
+__global__ void vectorDotElementWise(double* d_vector1, double* d_vector2, double* d_vector3, int rows);
 
-// template<typename T>
-// __global__ void matMultiMat(T* a, T* b);
+__global__ void vectorDotValue(double* d_vector_in, double* d_vector_out, int rows);
 
-// template<typename T>
-// __global__ void matMultiVec(T* a, T* b);
-
-// template<typename T>
-// __global__ void vecAdd(T* a, T* b);
-
-// template<typename T>
-// __global__ void vecDot(T* a, T* b);
-
-// template<Typename T, Typename scale>
-// __global__ void scaleVector(T* a, scale* s);
+__global__ void vectorDotValuePara(double* d_vector_in, double* d_vector_out, int rows);
 
 
 #endif // MYOPERATION_H

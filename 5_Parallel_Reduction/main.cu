@@ -4,8 +4,8 @@
 #include <math.h>
 #include <random>
 #include <chrono>
-#define SIZE  4194304
-
+// #define SIZE  4194304
+#define SIZE  256
 int cpu_sum(int *vector_h)
 {
     int sum = 0;
@@ -195,7 +195,7 @@ void test()
     // Set up grid, block for kernel
     int block_size = 128;
     dim3 block(block_size);
-    dim3 grid((SIZE/block_size));
+    dim3 grid((SIZE/(block_size*2)));
     int temp_array_byte_size = sizeof(int)* grid.x;
     printf("Kernel launch parameters | grid.x : %d, block.x : %d \n",
     grid.x, block.x);
@@ -204,7 +204,7 @@ void test()
     cudaMemcpy(vector_d,vector_h, size_vector, cudaMemcpyHostToDevice);
     // Execute 
     auto start = std::chrono::high_resolution_clock::now();
-    reduce1<<<grid, block>>>(vector_d,vector_temp);
+    reduce3<<<grid, block>>>(vector_d,vector_temp);
     cudaDeviceSynchronize();
     auto end = std::chrono::high_resolution_clock::now();
     // Device to host

@@ -1,7 +1,7 @@
 import numpy as np
 
 
-num = 100
+num = 4096
 residule = 0
 A = np.random.rand(num,num)
 A = np.dot(A,A.T)
@@ -18,7 +18,9 @@ while(1):
     ak = low/np.dot(pk.T,Ap)
     xk = xk + ak*pk
     rk = rk - ak*Ap
+    rk = b-np.dot(A,xk)
     up = np.dot(rk.T,rk)
+    print(np.sqrt(up))
     if(np.sqrt(up) < 1e-6):
         break
     bk = up / low
